@@ -9,6 +9,8 @@ const API = 'https://api.enablebanking.com';
 const REDIRECT = 'https://nicolaigarder.github.io/japan-budget/bank.html';
 const PERSON = 'nicolai';
 const MAX_CONSENT_S = 180 * 24 * 3600;
+// Kun denne konto bruges (SHA-256 af IBAN, så kontonummeret ikke står i den offentlige kode)
+const ONLY_IBAN_SHA256 = 'f6a830f8092028125f56dc2c777e122d1cce8ad9a4bcd63eeca12b5b7e734029';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -103,6 +105,9 @@ async function sync() {
   const lockin: string = st?.data?.lockin || '2026-11-03';
   let from = lockin;
   if (link.last_sync) { const d = new Date(link.last_sync); d.setUTCDate(d.getUTCDate() - 10); const s = d.toISOString().slice(0, 10); if (s > from) from = s; }
+  // Banken accepterer ikke en startdato i fremtiden (fx før lock-in er begyndt)
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  if (from > todayUtc) from = todayUtc;
   const patterns: RegExp[] = (link.exclude_patterns || []).filter(Boolean).map((p: string) => { try { return new RegExp(p, 'i'); } catch { return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); } });
   const { data: ign } = await db.from('bank_ignored').select('bank_ref');
   const ignored = new Set((ign || []).map((r: any) => r.bank_ref));
@@ -212,10 +217,17 @@ Deno.serve(async (req) => {
       if (!body.code) return json({ error: 'Mangler code' }, 400);
       if (!l.pending_state || body.state !== l.pending_state) return json({ error: 'Ugyldig state – start koblingen forfra' }, 400);
       const s = await eb('/sessions', { method: 'POST', body: JSON.stringify({ code: body.code }) });
-      const accounts = (s.accounts || []).map((a: any) => ({
-        uid: a.uid, name: a.name || a.product || a.details || 'Konto',
-        last4: String(a.account_id?.iban || a.account_id?.other?.identification || '').slice(-4), enabled: true,
-      }));
+      const accounts = [];
+      for (const a of s.accounts || []) {
+        const iban = String(a.account_id?.iban || '').replace(/\s/g, '').toUpperCase();
+        const ibanHash = iban ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(iban)))).map(b => b.toString(16).padStart(2, '0')).join('') : '';
+        accounts.push({
+          uid: a.uid, name: a.name || a.product || a.details || 'Konto',
+          last4: String(iban || a.account_id?.other?.identification || '').slice(-4),
+          enabled: ibanHash === ONLY_IBAN_SHA256,
+        });
+      }
+      if (accounts.length && !accounts.some(a => a.enabled)) throw new Error('Den valgte konto (··6649) var ikke med i samtykket – vælg den, når du godkender med MitID');
       await setLink({ session_id: s.session_id, accounts, valid_until: s.access?.valid_until || null, pending_state: null });
       let syncResult: unknown = null;
       try { syncResult = await sync(); } catch (e) { syncResult = { ok: false, error: String((e as Error).message || e) }; await setLink({ last_result: syncResult }); }
