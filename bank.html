@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Bank · Japan Budget</title>
+  <meta name="theme-color" content="#0e0e0d">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=2">
+  <style>
+    .list { font-size: 13px; }
+    .list div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); }
+    .list div span:first-child { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list div span:last-child { font-weight: 600; white-space: nowrap; }
+    textarea.input { min-height: 160px; font-size: 14px; font-family: ui-monospace, Menlo, monospace; }
+    .acc { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 15px; }
+    .acc input { width: 20px; height: 20px; }
+    .back { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); text-decoration: none; font-weight: 600; margin-bottom: 14px; }
+    .err { color: var(--bad-text); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="app" style="padding-bottom:40px">
+    <a class="back" href="./">← Tilbage til budget</a>
+    <header class="top"><div class="logo"><span class="sun"></span><div>Bankforbindelse<small>Lån &amp; Spar · kun læseadgang</small></div></div></header>
+    <div id="main"><div class="card"><div class="sub">Henter status…</div></div></div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="config.js?v=2"></script>
+  <script>
+  (() => {
+    const $ = s => document.querySelector(s);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const kr = n => new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 }).format(Math.round(n)) + ' kr';
+    const dt = s => s ? new Date(s).toLocaleString('da-DK', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '–';
+    const d = s => s ? new Date(s).toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
+    let S = null; try { S = JSON.parse(localStorage.getItem('jb_session')); } catch { /* ignore */ }
+    try { const t = JSON.parse(localStorage.getItem('jb_theme')); if (t && t !== 'auto') document.documentElement.setAttribute('data-theme', t); } catch { /* ignore */ }
+    const FN = (window.JB_CONFIG.supabaseUrl || '').replace(/\/$/, '') + '/functions/v1/bank';
+    let toastT;
+    const toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); };
+
+    async function call(action, extra = {}) {
+      const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: window.JB_CONFIG.supabaseKey }, body: JSON.stringify({ action, pin: S && S.pin, ...extra }) });
+      let data = null; try { data = await r.json(); } catch { data = { error: 'Ugyldigt svar fra serveren (' + r.status + ')' }; }
+      if (!r.ok || (data && data.error)) { const e = new Error((data && data.error) || r.statusText); e.data = data; throw e; }
+      return data;
+    }
+
+    function render(st, note) {
+      const r = st.last_result || {};
+      const expiring = st.linked && st.days_left != null && st.days_left <= 14;
+      $('#main').innerHTML = `
+        ${note ? `<div class="banner">${note}</div>` : ''}
+        <section class="card">
+          <h2>Status</h2>
+          <div class="stats">
+            <div class="stat"><div class="k">Forbindelse</div><div class="v ${st.linked ? 'pos' : ''}">${st.linked ? 'Aktiv' : 'Ikke koblet'}</div><div class="s">${esc(st.aspsp || 'Lån & Spar Bank')}</div></div>
+            <div class="stat"><div class="k">Gyldig til</div><div class="v ${expiring ? 'neg' : ''}">${st.linked ? (st.days_left ?? '–') + ' dage' : '–'}</div><div class="s">${d(st.valid_until)}</div></div>
+            <div class="stat wide"><div class="k">Seneste hentning</div><div class="v" style="font-size:17px">${dt(st.last_sync)}</div>
+              <div class="s">${r.error ? `<span class="err">Fejl: ${esc(r.error)}</span>` : r.ok ? `${r.imported} nye udgifter · ${(r.skipped || []).length} sprunget over` : 'Henter automatisk kl. 06 og 18'}</div></div>
+          </div>
+          ${st.accounts && st.accounts.length ? `<div style="margin-top:14px"><span class="lab">Konti der hentes fra</span>
+            ${st.accounts.map(a => `<label class="acc"><input type="checkbox" data-uid="${esc(a.uid)}" ${a.enabled ? 'checked' : ''}>${esc(a.name)}${a.last4 ? ` <span class="muted">··${esc(a.last4)}</span>` : ''}</label>`).join('')}
+            <button class="link-btn" id="save-acc">Gem kontovalg</button></div>` : ''}
+          <div class="btns" style="margin-top:14px">
+            ${st.linked ? '<button class="btn" id="sync">Hent nu</button>' : ''}
+            <button class="btn ${st.linked ? 'ghost' : ''}" id="link">${st.linked ? 'Forny forbindelse (MitID)' : 'Kobl Lån & Spar (MitID)'}</button>
+            ${st.linked ? '<button class="btn danger" id="unlink">Fjern forbindelse</button>' : ''}
+          </div>
+        </section>
+
+        ${r.imported_list && r.imported_list.length ? `<section class="card"><h2>Hentet sidst</h2><div class="list">
+          ${r.imported_list.map(x => `<div><span>${esc(x.day)} · ${esc(x.note)}</span><span>${kr(x.amount_dkk)}</span></div>`).join('')}</div></section>` : ''}
+
+        ${r.skipped && r.skipped.length ? `<section class="card"><h2>Sprunget over</h2><div class="sub" style="margin-bottom:8px">Tæller ikke som dagligt forbrug (matcher listen nedenfor).</div><div class="list">
+          ${r.skipped.map(x => `<div><span>${esc(x.day)} · ${esc(x.text)}</span><span>${kr(x.amount)}</span></div>`).join('')}</div></section>` : ''}
+
+        <section class="card">
+          <h2>Spring over hvis teksten indeholder</h2>
+          <div class="sub" style="margin-bottom:10px">Ét ord pr. linje (store/små bogstaver er ligegyldige). Bruges til husleje, lån, overførsler osv.</div>
+          <textarea class="input" id="patterns">${esc((st.exclude_patterns || []).join('\n'))}</textarea>
+          <div class="btns"><button class="btn ghost" id="save-pat">Gem liste</button></div>
+        </section>
+        <div class="sub" style="text-align:center;margin-top:8px">Indbetalinger springes altid over. Kontanthævninger tæller som forbrug. Slettede bankposteringer hentes ikke igen.</div>`;
+
+      const on = (id, fn) => { const el = $('#' + id); if (el) el.addEventListener('click', async ev => { ev.target.disabled = true; try { await fn(); } catch (e) { toast(e.message); } ev.target.disabled = false; }); };
+      on('link', async () => { const res = await call('auth'); location.href = res.url; });
+      on('sync', async () => { toast('Henter…'); const res = await call('sync'); toast(`${res.imported} nye udgifter`); render(await call('status')); });
+      on('unlink', async () => { if (!confirm('Fjern bankforbindelsen?')) return; render(await call('unlink')); toast('Forbindelsen er fjernet'); });
+      on('save-pat', async () => { render(await call('settings', { exclude_patterns: $('#patterns').value.split('\n') })); toast('Gemt'); });
+      on('save-acc', async () => { const enabled = [...document.querySelectorAll('[data-uid]')].filter(x => x.checked).map(x => x.dataset.uid); render(await call('settings', { enabled })); toast('Gemt'); });
+    }
+
+    async function start() {
+      if (!S || !S.pin) { $('#main').innerHTML = '<section class="card"><div class="sub">Log ind på <a href="./">budget-siden</a> først, og kom så tilbage hertil.</div></section>'; return; }
+      const q = new URLSearchParams(location.search);
+      try {
+        if (q.get('error')) {
+          history.replaceState(null, '', location.pathname);
+          render(await call('status'), `Banken afviste koblingen: ${esc(q.get('error_description') || q.get('error'))}`);
+        } else if (q.get('code')) {
+          $('#main').innerHTML = '<section class="card"><div class="sub">Gemmer forbindelsen og henter posteringer…</div></section>';
+          const res = await call('session', { code: q.get('code'), state: q.get('state') });
+          history.replaceState(null, '', location.pathname);
+          const s = res.sync || {};
+          render(res, s.ok ? `Koblet! ${s.imported} udgifter hentet fra ${esc(s.from)}.` : `Koblet, men hentning fejlede: ${esc(s.error || '')}`);
+        } else {
+          render(await call('status'));
+        }
+      } catch (e) {
+        $('#main').innerHTML = `<section class="card"><div class="err">${esc(e.message)}</div><div class="btns" style="margin-top:12px"><button class="btn ghost" onclick="location.href=location.pathname">Prøv igen</button></div></section>`;
+      }
+    }
+    start();
+  })();
+  </script>
+</body>
+</html>
