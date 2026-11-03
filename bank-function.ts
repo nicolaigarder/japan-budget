@@ -1,16 +1,18 @@
 // Supabase Edge Function "bank"
-// Henter Nicolais posteringer fra Lån & Spar via Enable Banking (kun læseadgang) og lægger dem ind som udgifter.
-// Kræver secret: EB_PRIVATE_KEY (indholdet af .pem-filen fra Enable Banking).
-// "Enforce JWT verification" skal være slået FRA – funktionen tjekker selv jeres fælles kode / cron-hemmelighed.
+// Henter Nicolais og Alex' posteringer via Enable Banking (kun læseadgang) og lægger dem ind som udgifter.
+// Hver person har sin egen bankforbindelse, beskyttet af en personlig bankkode (ud over jeres fælles kode).
+// Secrets: EB_PRIVATE_KEY (Nicolais .pem). Valgfrit for Alex' egen app: EB_APP_ID_ALEX + EB_PRIVATE_KEY_ALEX.
+// "Verify JWT" skal være slået FRA – funktionen tjekker selv fælles kode, bankkode og cron-hemmelighed.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const APP_ID = '151cb802-55c9-4318-a57d-7c65c66dec83';
 const API = 'https://api.enablebanking.com';
 const REDIRECT = 'https://nicolaigarder.github.io/japan-budget/bank.html';
-const PERSON = 'nicolai';
+const PEOPLE = ['nicolai', 'alex'];
 const MAX_CONSENT_S = 180 * 24 * 3600;
-// Kun denne konto bruges (SHA-256 af IBAN, så kontonummeret ikke står i den offentlige kode)
-const ONLY_IBAN_SHA256 = 'f6a830f8092028125f56dc2c777e122d1cce8ad9a4bcd63eeca12b5b7e734029';
+const MAX_FAILS = 5, LOCK_MIN = 15;
+// Nicolai: kun denne konto bruges (SHA-256 af IBAN, så kontonummeret ikke står i den offentlige kode)
+const ONLY_IBAN_SHA256: Record<string, string> = { nicolai: 'f6a830f8092028125f56dc2c777e122d1cce8ad9a4bcd63eeca12b5b7e734029' };
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -20,7 +22,7 @@ const cors = {
 const json = (d: unknown, status = 200) => new Response(JSON.stringify(d), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 
-/* ---------- JWT (RS256) ---------- */
+/* ---------- JWT (RS256), én Enable Banking-app pr. person (Alex falder tilbage til Nicolais) ---------- */
 const enc = new TextEncoder();
 const b64url = (data: Uint8Array | string) => {
   const bytes = typeof data === 'string' ? enc.encode(data) : data;
@@ -35,27 +37,34 @@ const pkcs1ToPkcs8 = (k: Uint8Array) => der(0x30, concat(
   new Uint8Array([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00]),
   der(0x04, k),
 ));
-let keyP: Promise<CryptoKey> | null = null;
-function signingKey() {
-  if (!keyP) {
-    const pem = Deno.env.get('EB_PRIVATE_KEY') || '';
-    if (!pem) throw new Error('EB_PRIVATE_KEY mangler i Supabase secrets');
-    const body = pem.replace(/-----[^-]+-----/g, '').replace(/\\n/g, '').replace(/[^A-Za-z0-9+/=]/g, '');
+const appFor = (person: string) => {
+  const P = person.toUpperCase();
+  const own = Deno.env.get(`EB_APP_ID_${P}`) && Deno.env.get(`EB_PRIVATE_KEY_${P}`);
+  return own
+    ? { id: Deno.env.get(`EB_APP_ID_${P}`)!, pem: Deno.env.get(`EB_PRIVATE_KEY_${P}`)! }
+    : { id: APP_ID, pem: Deno.env.get('EB_PRIVATE_KEY') || '' };
+};
+const keys = new Map<string, Promise<CryptoKey>>();
+function signingKey(app: { id: string; pem: string }) {
+  if (!keys.has(app.id)) {
+    if (!app.pem) throw new Error('Privat nøgle mangler i Supabase secrets');
+    const body = app.pem.replace(/-----[^-]+-----/g, '').replace(/\\n/g, '').replace(/[^A-Za-z0-9+/=]/g, '');
     let derBytes = Uint8Array.from(atob(body), c => c.charCodeAt(0));
-    if (/RSA PRIVATE KEY/.test(pem)) derBytes = pkcs1ToPkcs8(derBytes);
-    keyP = crypto.subtle.importKey('pkcs8', derBytes, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    if (/RSA PRIVATE KEY/.test(app.pem)) derBytes = pkcs1ToPkcs8(derBytes);
+    keys.set(app.id, crypto.subtle.importKey('pkcs8', derBytes, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']));
   }
-  return keyP;
+  return keys.get(app.id)!;
 }
-async function jwt() {
+async function jwt(person: string) {
+  const app = appFor(person);
   const now = Math.floor(Date.now() / 1000);
-  const h = b64url(JSON.stringify({ typ: 'JWT', alg: 'RS256', kid: APP_ID }));
+  const h = b64url(JSON.stringify({ typ: 'JWT', alg: 'RS256', kid: app.id }));
   const p = b64url(JSON.stringify({ iss: 'enablebanking.com', aud: 'api.enablebanking.com', iat: now, exp: now + 3600 }));
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', await signingKey(), enc.encode(`${h}.${p}`));
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', await signingKey(app), enc.encode(`${h}.${p}`));
   return `${h}.${p}.${b64url(new Uint8Array(sig))}`;
 }
-async function eb(path: string, init: RequestInit = {}) {
-  const r = await fetch(API + path, { ...init, headers: { Authorization: 'Bearer ' + await jwt(), 'Content-Type': 'application/json' } });
+async function eb(person: string, path: string, init: RequestInit = {}) {
+  const r = await fetch(API + path, { ...init, headers: { Authorization: 'Bearer ' + await jwt(person), 'Content-Type': 'application/json' } });
   const text = await r.text();
   let data: any = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!r.ok) throw new Error(`Enable Banking ${r.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`.slice(0, 600));
@@ -63,13 +72,13 @@ async function eb(path: string, init: RequestInit = {}) {
 }
 
 /* ---------- Hjælpere ---------- */
-async function getLink() {
-  const { data, error } = await db.from('bank_link').select('*').eq('id', 1).single();
+async function getLink(person: string) {
+  const { data, error } = await db.from('bank_link').select('*').eq('person', person).single();
   if (error) throw error;
   return data;
 }
-async function setLink(patch: Record<string, unknown>) {
-  const { error } = await db.from('bank_link').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', 1);
+async function setLink(person: string, patch: Record<string, unknown>) {
+  const { error } = await db.from('bank_link').update({ ...patch, updated_at: new Date().toISOString() }).eq('person', person);
   if (error) throw error;
 }
 async function sha(s: string) {
@@ -96,11 +105,14 @@ const cleanText = (t: string) => t.replace(/\s+/g, ' ')
   .replace(/\b(JPY|USD|EUR|SEK|NOK)\b.*$/i, '')
   .replace(/(\s+[\d.,\/]+)+\s*$/, '')
   .trim().slice(0, 60);
+const hex = async (s: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(s)))).map(b => b.toString(16).padStart(2, '0')).join('');
 
 /* ---------- Synkronisering ---------- */
-async function sync() {
-  const link = await getLink();
+async function sync(person: string) {
+  const link = await getLink(person);
   if (!link.session_id) return { ok: false, error: 'Ikke koblet til banken endnu' };
+  const accounts = (link.accounts || []).filter((a: any) => a.enabled === true);
+  if (!accounts.length) return { ok: false, error: 'Vælg hvilken konto der skal hentes fra' };
   const { data: st } = await db.from('settings').select('data').eq('id', 1).single();
   const lockin: string = st?.data?.lockin || '2026-11-03';
   let from = lockin;
@@ -112,13 +124,12 @@ async function sync() {
   const { data: ign } = await db.from('bank_ignored').select('bank_ref');
   const ignored = new Set((ign || []).map((r: any) => r.bank_ref));
   const rows: any[] = [], skipped: any[] = [];
-  const accounts = (link.accounts || []).filter((a: any) => a.enabled !== false);
   for (const acc of accounts) {
     let ck: string | null = null, guard = 0;
     do {
       const q = new URLSearchParams({ date_from: from });
       if (ck) q.set('continuation_key', ck);
-      const r = await eb(`/accounts/${encodeURIComponent(acc.uid)}/transactions?${q}`);
+      const r = await eb(person, `/accounts/${encodeURIComponent(acc.uid)}/transactions?${q}`);
       for (const t of r.transactions || []) {
         if (t.status && t.status !== 'BOOK') continue;
         const rawAmt = parseFloat(t.transaction_amount?.amount);
@@ -136,7 +147,7 @@ async function sync() {
         const isCash = /h[æa]vning|\batm\b|kontant|cash/i.test(raw);
         const jpy = parseJpy(raw);
         rows.push({
-          person: PERSON, day, amount_dkk: Math.round(amt * 100) / 100,
+          person, day, amount_dkk: Math.round(amt * 100) / 100,
           amount_orig: jpy ?? Math.round(amt * 100) / 100, currency: jpy ? 'JPY' : 'DKK',
           rate: jpy ? amt / jpy : null, category: guessCat(raw),
           note: isCash ? 'Kontanthævning' : (cleanText(raw) || 'Kortkøb'),
@@ -153,18 +164,42 @@ async function sync() {
     inserted = data || [];
   }
   const result = { ok: true, at: new Date().toISOString(), from, imported: inserted.length, imported_list: inserted.slice(0, 40), skipped: skipped.slice(0, 40) };
-  await setLink({ last_sync: result.at, last_result: result });
+  await setLink(person, { last_sync: result.at, last_result: result });
   return result;
 }
+async function safeSync(person: string) {
+  try { return await sync(person); }
+  catch (e) { const r = { ok: false, at: new Date().toISOString(), error: String((e as Error).message || e) }; await setLink(person, { last_result: r }); return r; }
+}
 
-async function status() {
-  const l = await getLink();
+async function status(person: string) {
+  const l = await getLink(person);
   const days = l.valid_until ? Math.floor((new Date(l.valid_until).getTime() - Date.now()) / 864e5) : null;
   return {
-    linked: !!l.session_id, aspsp: l.aspsp, valid_until: l.valid_until, days_left: days,
+    person, linked: !!l.session_id, aspsp: l.aspsp, valid_until: l.valid_until, days_left: days,
     last_sync: l.last_sync, last_result: l.last_result, exclude_patterns: l.exclude_patterns,
-    accounts: (l.accounts || []).map((a: any) => ({ uid: a.uid, name: a.name, last4: a.last4, enabled: a.enabled !== false })),
+    accounts: (l.accounts || []).map((a: any) => ({ uid: a.uid, name: a.name, last4: a.last4, enabled: a.enabled === true })),
   };
+}
+
+/* ---------- Personlig bankkode (med spærring efter for mange forkerte forsøg) ---------- */
+async function checkCode(person: string, code: string): Promise<Response | null> {
+  const l = await getLink(person);
+  if (!l.code_hash) return json({ error: 'Ingen bankkode valgt endnu', need_code_setup: true }, 403);
+  if (l.locked_until && new Date(l.locked_until).getTime() > Date.now()) {
+    const min = Math.ceil((new Date(l.locked_until).getTime() - Date.now()) / 60000);
+    return json({ error: `For mange forkerte forsøg – prøv igen om ${min} min.`, locked: true }, 429);
+  }
+  const { data: ok, error } = await db.rpc('jb_bank_code_ok', { p_person: person, p_code: code });
+  if (error) throw error;
+  if (!ok) {
+    const fails = (l.fail_count || 0) + 1;
+    if (fails >= MAX_FAILS) await setLink(person, { fail_count: 0, locked_until: new Date(Date.now() + LOCK_MIN * 60000).toISOString() });
+    else await setLink(person, { fail_count: fails });
+    return json({ error: 'Forkert bankkode', bad_code: true, tries_left: Math.max(0, MAX_FAILS - fails) }, 403);
+  }
+  if (l.fail_count || l.locked_until) await setLink(person, { fail_count: 0, locked_until: null });
+  return null;
 }
 
 /* ---------- HTTP ---------- */
@@ -173,86 +208,115 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || 'status');
+
+    // Automatisk hentning (pg_cron) – henter for alle koblede personer
     const cronSecret = req.headers.get('x-cron-secret');
-    let isCron = false;
     if (cronSecret) {
-      const l = await getLink();
-      isCron = !!l.cron_secret && cronSecret === l.cron_secret;
-      if (!isCron) return json({ error: 'forbidden' }, 403);
-      if (action !== 'sync') return json({ error: 'forbidden' }, 403);
-    } else {
-      const { data: ok, error } = await db.rpc('jb_pin_ok', { p_pin: String(body.pin || '') });
-      if (error) throw error;
-      if (!ok) return json({ error: 'Forkert kode' }, 403);
+      const { data: c } = await db.from('bank_link').select('cron_secret').eq('id', 1).single();
+      if (!c?.cron_secret || cronSecret !== c.cron_secret || action !== 'sync') return json({ error: 'forbidden' }, 403);
+      const out: Record<string, unknown> = {};
+      for (const p of PEOPLE) { const l = await getLink(p); if (l.session_id) out[p] = await safeSync(p); }
+      return json(out);
     }
 
-    if (action === 'status') return json(await status());
+    const { data: pinOk, error: pinErr } = await db.rpc('jb_pin_ok', { p_pin: String(body.pin || '') });
+    if (pinErr) throw pinErr;
+    if (!pinOk) return json({ error: 'Forkert kode' }, 403);
+
+    const person = String(body.person || '');
+    if (!PEOPLE.includes(person)) return json({ error: 'Ukendt person' }, 400);
+    const code = String(body.bank_code || '');
+
+    // Uden bankkode: kun om der er valgt en kode
+    if (action === 'code_state') {
+      const l = await getLink(person);
+      return json({ has_code: !!l.code_hash, locked: !!(l.locked_until && new Date(l.locked_until).getTime() > Date.now()) });
+    }
+    if (action === 'set_code') {
+      const l = await getLink(person);
+      if (l.code_hash) return json({ error: 'Der er allerede valgt en bankkode' }, 409);
+      if (code.length < 4) return json({ error: 'Bankkoden skal være mindst 4 tegn' }, 400);
+      const { error } = await db.rpc('jb_bank_code_set', { p_person: person, p_code: code });
+      if (error) throw error;
+      return json(await status(person));
+    }
+
+    // Alt andet kræver personens bankkode
+    const denied = await checkCode(person, code);
+    if (denied) return denied;
+
+    if (action === 'status') return json(await status(person));
+
+    if (action === 'change_code') {
+      const nc = String(body.new_code || '');
+      if (nc.length < 4) return json({ error: 'Bankkoden skal være mindst 4 tegn' }, 400);
+      const { error } = await db.rpc('jb_bank_code_set', { p_person: person, p_code: nc });
+      if (error) throw error;
+      return json({ ok: true });
+    }
 
     if (action === 'banks') {
-      const d = await eb('/aspsps?country=DK');
-      return json({ banks: (d.aspsps || []).map((a: any) => a.name) });
+      const d = await eb(person, '/aspsps?country=DK');
+      return json({ banks: (d.aspsps || []).map((a: any) => a.name).sort((a: string, b: string) => a.localeCompare(b, 'da')) });
     }
 
     if (action === 'auth') {
-      const d = await eb('/aspsps?country=DK');
+      const d = await eb(person, '/aspsps?country=DK');
       const list = d.aspsps || [];
       const want = String(body.bank || '');
       const a = list.find((x: any) => want ? x.name === want : /l[åa]n\s*(&|og)\s*spar/i.test(x.name));
-      if (!a) return json({ error: 'Fandt ikke Lån & Spar hos Enable Banking', banks: list.map((x: any) => x.name) }, 404);
+      if (!a) return json({ error: 'Fandt ikke banken hos Enable Banking', banks: list.map((x: any) => x.name) }, 404);
       const secs = Math.min(Number(a.maximum_consent_validity) || MAX_CONSENT_S, MAX_CONSENT_S) - 3600;
       const state = crypto.randomUUID();
-      const r = await eb('/auth', {
+      const r = await eb(person, '/auth', {
         method: 'POST',
         body: JSON.stringify({
           access: { valid_until: new Date(Date.now() + secs * 1000).toISOString() },
           aspsp: { name: a.name, country: 'DK' }, state, redirect_url: REDIRECT, psu_type: 'personal',
         }),
       });
-      await setLink({ pending_state: state, aspsp: a.name });
+      await setLink(person, { pending_state: state, aspsp: a.name });
       return json({ url: r.url });
     }
 
     if (action === 'session') {
-      const l = await getLink();
+      const l = await getLink(person);
       if (!body.code) return json({ error: 'Mangler code' }, 400);
       if (!l.pending_state || body.state !== l.pending_state) return json({ error: 'Ugyldig state – start koblingen forfra' }, 400);
-      const s = await eb('/sessions', { method: 'POST', body: JSON.stringify({ code: body.code }) });
+      const s = await eb(person, '/sessions', { method: 'POST', body: JSON.stringify({ code: body.code }) });
+      const only = ONLY_IBAN_SHA256[person];
+      const raw = s.accounts || [];
       const accounts = [];
-      for (const a of s.accounts || []) {
+      for (const a of raw) {
         const iban = String(a.account_id?.iban || '').replace(/\s/g, '').toUpperCase();
-        const ibanHash = iban ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(iban)))).map(b => b.toString(16).padStart(2, '0')).join('') : '';
-        accounts.push({
-          uid: a.uid, name: a.name || a.product || a.details || 'Konto',
-          last4: String(iban || a.account_id?.other?.identification || '').slice(-4),
-          enabled: ibanHash === ONLY_IBAN_SHA256,
-        });
+        const enabled = only ? (iban ? (await hex(iban)) === only : false) : raw.length === 1;
+        accounts.push({ uid: a.uid, name: a.name || a.product || a.details || 'Konto', last4: String(iban || a.account_id?.other?.identification || '').slice(-4), enabled });
       }
-      if (accounts.length && !accounts.some(a => a.enabled)) throw new Error('Den valgte konto (··6649) var ikke med i samtykket – vælg den, når du godkender med MitID');
-      await setLink({ session_id: s.session_id, accounts, valid_until: s.access?.valid_until || null, pending_state: null });
-      let syncResult: unknown = null;
-      try { syncResult = await sync(); } catch (e) { syncResult = { ok: false, error: String((e as Error).message || e) }; await setLink({ last_result: syncResult }); }
-      return json({ ...(await status()), sync: syncResult });
+      if (only && accounts.length && !accounts.some(a => a.enabled)) throw new Error('Den valgte konto var ikke med i samtykket – vælg den, når du godkender med MitID');
+      await setLink(person, { session_id: s.session_id, accounts, valid_until: s.access?.valid_until || null, pending_state: null });
+      const syncResult = accounts.some(a => a.enabled) ? await safeSync(person) : { ok: false, error: 'Vælg hvilken konto der skal hentes fra' };
+      return json({ ...(await status(person)), sync: syncResult });
     }
 
     if (action === 'sync') {
-      try { return json(await sync()); }
-      catch (e) { const r = { ok: false, at: new Date().toISOString(), error: String((e as Error).message || e) }; await setLink({ last_result: r }); return json(r, 502); }
+      const r = await safeSync(person);
+      return json(r, (r as any).ok === false && (r as any).at ? 502 : 200);
     }
 
     if (action === 'settings') {
-      const l = await getLink();
+      const l = await getLink(person);
       const patch: Record<string, unknown> = {};
       if (Array.isArray(body.exclude_patterns)) patch.exclude_patterns = body.exclude_patterns.map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 100);
       if (Array.isArray(body.enabled)) patch.accounts = (l.accounts || []).map((a: any) => ({ ...a, enabled: body.enabled.includes(a.uid) }));
-      await setLink(patch);
-      return json(await status());
+      await setLink(person, patch);
+      return json(await status(person));
     }
 
     if (action === 'unlink') {
-      const l = await getLink();
-      if (l.session_id) { try { await eb(`/sessions/${encodeURIComponent(l.session_id)}`, { method: 'DELETE' }); } catch { /* allerede udløbet */ } }
-      await setLink({ session_id: null, accounts: [], valid_until: null, pending_state: null });
-      return json(await status());
+      const l = await getLink(person);
+      if (l.session_id) { try { await eb(person, `/sessions/${encodeURIComponent(l.session_id)}`, { method: 'DELETE' }); } catch { /* allerede udløbet */ } }
+      await setLink(person, { session_id: null, accounts: [], valid_until: null, pending_state: null });
+      return json(await status(person));
     }
 
     return json({ error: 'Ukendt action' }, 400);

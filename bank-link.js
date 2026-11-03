@@ -37,10 +37,11 @@
   new MutationObserver(decorate).observe(root, { childList: true, subtree: true });
   decorate();
 
-  if (S && S.pin && CFG.supabaseUrl) {
+  let bankCode = null; try { bankCode = S && (sessionStorage.getItem('jb_bankcode_' + S.me) || localStorage.getItem('jb_bankcode_' + S.me)); } catch { /* ignore */ }
+  if (S && S.pin && bankCode && CFG.supabaseUrl) {
     fetch(CFG.supabaseUrl.replace(/\/$/, '') + '/functions/v1/bank', {
       method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CFG.supabaseKey },
-      body: JSON.stringify({ action: 'status', pin: S.pin }),
+      body: JSON.stringify({ action: 'status', pin: S.pin, person: S.me, bank_code: bankCode }),
     }).then(r => r.ok ? r.json() : null).then(d => { if (d && !d.error) { status = d; decorate(); } }).catch(() => {});
   }
 })();
