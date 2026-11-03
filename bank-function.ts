@@ -177,7 +177,7 @@ async function status(person: string) {
   const days = l.valid_until ? Math.floor((new Date(l.valid_until).getTime() - Date.now()) / 864e5) : null;
   return {
     person, linked: !!l.session_id, aspsp: l.aspsp, valid_until: l.valid_until, days_left: days,
-    last_sync: l.last_sync, last_result: l.last_result, exclude_patterns: l.exclude_patterns,
+    last_sync: l.last_sync, last_result: l.last_result, exclude_patterns: l.exclude_patterns, analysis: l.last_analysis || null,
     accounts: (l.accounts || []).map((a: any) => ({ uid: a.uid, name: a.name, last4: a.last4, enabled: a.enabled === true })),
   };
 }
@@ -301,6 +301,57 @@ Deno.serve(async (req) => {
     if (action === 'sync') {
       const r = await safeSync(person);
       return json(r, (r as any).ok === false && (r as any).at ? 502 : 200);
+    }
+
+    if (action === 'analyze') {
+      const l = await getLink(person);
+      if (!l.session_id) return json({ error: 'Ikke koblet til banken' }, 400);
+      const { data: st } = await db.from('settings').select('data').eq('id', 1).single();
+      const P = st?.data?.people?.[person] || {};
+      const lockin: string = st?.data?.lockin || '2026-11-03';
+      const dd = new Date(lockin + 'T00:00:00Z'); dd.setUTCDate(dd.getUTCDate() - 1);
+      const from = String(body.from || P.arrival || lockin), to = String(body.to || dd.toISOString().slice(0, 10));
+      const groups: Record<string, { label: string; re: RegExp | null; sum: number; n: number }> = {
+        opsparing: { label: 'Overførsler / opsparing', re: /opsparing|overf|egen konto|budgetkonto|til konto/i, sum: 0, n: 0 },
+        husleje: { label: 'Husleje', re: /husleje|leje/i, sum: 0, n: 0 },
+        laan: { label: 'Lån / afdrag', re: /afdrag|ydelse/i, sum: 0, n: 0 },
+        kontant: { label: 'Kontanthævninger', re: /h[æa]vning|\batm\b|kontant|cash/i, sum: 0, n: 0 },
+        andet: { label: 'Øvrigt forbrug (kort m.m.)', re: null, sum: 0, n: 0 },
+      };
+      let credits = 0; const all: any[] = [];
+      for (const acc of (l.accounts || []).filter((a: any) => a.enabled === true)) {
+        let ck: string | null = null, guard = 0;
+        do {
+          const q = new URLSearchParams({ date_from: from, date_to: to });
+          if (ck) q.set('continuation_key', ck);
+          const r = await eb(person, `/accounts/${encodeURIComponent(acc.uid)}/transactions?${q}`);
+          for (const t of r.transactions || []) {
+            if (t.status && t.status !== 'BOOK') continue;
+            const rawAmt = parseFloat(t.transaction_amount?.amount);
+            const ind = t.credit_debit_indicator || (rawAmt < 0 ? 'DBIT' : 'CRDT');
+            const amt = Math.abs(rawAmt);
+            if (!(amt > 0)) continue;
+            const day = String(t.transaction_date || t.value_date || t.booking_date || '').slice(0, 10);
+            if (!day || day < from || day > to) continue;
+            if (ind !== 'DBIT') { credits += amt; continue; }
+            const text = [t.creditor?.name, ...(Array.isArray(t.remittance_information) ? t.remittance_information : [t.remittance_information]), t.note]
+              .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+            const key = (Object.keys(groups).find(k => groups[k].re && groups[k].re!.test(text)) || 'andet');
+            groups[key].sum += amt; groups[key].n++;
+            all.push({ day, amount: Math.round(amt * 100) / 100, text: text.slice(0, 80), group: key });
+          }
+          ck = r.continuation_key || null; guard++;
+        } while (ck && guard < 30);
+      }
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const result = {
+        at: new Date().toISOString(), from, to, count: all.length,
+        debits: r2(all.reduce((s, x) => s + x.amount, 0)), credits: r2(credits),
+        groups: Object.entries(groups).map(([key, g]) => ({ key, label: g.label, sum: r2(g.sum), n: g.n })),
+        largest: [...all].sort((a, b) => b.amount - a.amount).slice(0, 30),
+      };
+      await setLink(person, { last_analysis: result });
+      return json(result);
     }
 
     if (action === 'settings') {

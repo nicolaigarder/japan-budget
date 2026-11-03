@@ -116,6 +116,13 @@
           ${r.skipped.map(x => `<div><span>${esc(x.day)} · ${esc(x.text)}</span><span>${kr(x.amount)}</span></div>`).join('')}</div></section>` : ''}
 
         <section class="card">
+          <h2>Tjek perioden før lock-in</h2>
+          <div class="sub" style="margin-bottom:10px">Henter dine posteringer fra ankomst til dagen før lock-in og deler dem op i opsparing, husleje, lån, kontanter og øvrigt forbrug.</div>
+          <div id="analysis">${st.analysis ? analysisHtml(st.analysis) : ''}</div>
+          <div class="btns"><button class="btn ghost" id="analyze">Analysér perioden</button></div>
+        </section>
+
+        <section class="card">
           <h2>Spring over hvis teksten indeholder</h2>
           <div class="sub" style="margin-bottom:10px">Ét ord pr. linje (store/små bogstaver er ligegyldige). Bruges til husleje, lån, overførsler osv.</div>
           <textarea class="input" id="patterns">${esc((st.exclude_patterns || []).join('\n'))}</textarea>
@@ -133,6 +140,7 @@
       on('unlink', async () => { if (!confirm('Fjern bankforbindelsen?')) return; render(await call('unlink')); toast('Forbindelsen er fjernet'); });
       on('save-pat', async () => { render(await call('settings', { exclude_patterns: $('#patterns').value.split('\n') })); toast('Gemt'); });
       on('save-acc', async () => { const enabled = [...document.querySelectorAll('[data-uid]')].filter(x => x.checked).map(x => x.dataset.uid); render(await call('settings', { enabled })); toast('Gemt'); });
+      on('analyze', async () => { toast('Henter posteringer…'); const a = await call('analyze'); $('#analysis').innerHTML = analysisHtml(a); });
       on('lock', async () => { store(CODE_KEY, null); bankCode = null; start(); });
       on('chg', async () => {
         const nc = prompt('Ny bankkode (mindst 4 tegn):'); if (!nc) return;
@@ -145,6 +153,15 @@
         const def = PERSON === 'nicolai' ? (res.banks.find(b => /l[åa]n\s*(&|og)\s*spar/i.test(b)) || '') : '';
         sel.innerHTML = `<option value="">Vælg bank…</option>` + res.banks.map(b => `<option ${b === def ? 'selected' : ''}>${esc(b)}</option>`).join('');
       }).catch(e => { sel.innerHTML = `<option value="">Kunne ikke hente banker</option>`; toast(e.message); });
+    }
+
+    function analysisHtml(a) {
+      return `<div class="sub" style="margin-bottom:8px">${esc(a.from)} – ${esc(a.to)} · ${a.count} udbetalinger</div>
+        <table class="breakdown">${a.groups.map(g => `<tr><td>${esc(g.label)} <span class="muted">(${g.n})</span></td><td>${kr(g.sum)}</td></tr>`).join('')}
+        <tr class="total"><td>Udbetalinger i alt</td><td>${kr(a.debits)}</td></tr>
+        <tr class="indent"><td>Indbetalinger i perioden</td><td>${kr(a.credits)}</td></tr></table>
+        <span class="lab" style="margin-top:14px">Største udbetalinger</span>
+        <div class="list">${a.largest.map(x => `<div><span>${esc(x.day)} · ${esc(x.text)}</span><span>${kr(x.amount)}</span></div>`).join('')}</div>`;
     }
 
     function handleErr(e) {
