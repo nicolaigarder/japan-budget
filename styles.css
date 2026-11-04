@@ -19,6 +19,8 @@
   --btn-text: #fcfcfb;
   --shadow: 0 1px 2px rgba(20, 20, 15, .04), 0 4px 16px rgba(20, 20, 15, .05);
   --radius: 18px;
+  --deco: .05;
+  --wave: url("data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40"%3E%3Ccircle cx="0" cy="0" r="39" fill="%23f4f3ef" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="30" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="21" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="12" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="39" fill="%23f4f3ef" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="30" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="21" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="12" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="39" fill="%23f4f3ef" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="30" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="21" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="12" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="39" fill="%23f4f3ef" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="30" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="21" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="12" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="39" fill="%23f4f3ef" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="30" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="21" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="12" fill="none" stroke="%230b0b0b" stroke-width="1.2"/%3E%3C/svg%3E");
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -38,6 +40,8 @@
     --btn: #f0efec;
     --btn-text: #121211;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+    --deco: .055;
+    --wave: url("data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40"%3E%3Ccircle cx="0" cy="0" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3C/svg%3E");
   }
 }
 :root[data-theme="dark"] {
@@ -57,6 +61,8 @@
   --btn: #f0efec;
   --btn-text: #121211;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  --deco: .055;
+  --wave: url("data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40"%3E%3Ccircle cx="0" cy="0" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="0" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="0" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="40" cy="20" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="0" cy="40" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="39" fill="%230e0e0d" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="30" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="21" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3Ccircle cx="80" cy="40" r="12" fill="none" stroke="%23f0efec" stroke-width="1.2"/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -363,3 +369,43 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .dcol .card.hist { flex: none; max-height: 520px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+
+/* Baggrund: diskrete japanske tegn */
+#root, .bg-deco ~ .app { position: relative; z-index: 1; }
+.card { background: color-mix(in srgb, var(--surface) 93%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.bg-deco { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; user-select: none; }
+.bg-deco .g {
+  position: absolute; font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif; font-weight: 700;
+  line-height: 1; color: var(--text); opacity: var(--deco); white-space: nowrap;
+}
+.bg-deco .v { writing-mode: vertical-rl; letter-spacing: .08em; }
+.bg-deco .sun { color: var(--sun); opacity: calc(var(--deco) * 1.6); }
+.bg-deco .g1 { top: 9%; left: -1.5%; font-size: clamp(110px, 15vw, 260px); }
+.bg-deco .g2 { top: 4%; right: 2.5%; font-size: clamp(90px, 10vw, 180px); }
+.bg-deco .g3 { top: 40%; left: 37%; font-size: clamp(160px, 22vw, 380px); }
+.bg-deco .g4 { bottom: 6%; left: 4%; font-size: clamp(80px, 9vw, 160px); }
+.bg-deco .g5 { top: 58%; right: 6%; font-size: clamp(120px, 14vw, 240px); }
+.bg-deco .g6 { top: 30%; left: 26%; font-size: clamp(60px, 6vw, 110px); }
+.bg-deco .g7 { top: 3%; left: 52%; font-size: clamp(60px, 6vw, 110px); }
+.bg-deco .g8 { bottom: 14%; right: 30%; font-size: clamp(70px, 7vw, 130px); }
+.bg-deco .phrase {
+  position: absolute; top: 50%; left: 10px; transform: translateY(-50%); writing-mode: vertical-rl;
+  font-family: 'Noto Serif JP', serif; font-weight: 700; font-size: 13px; letter-spacing: .6em;
+  color: var(--text); opacity: calc(var(--deco) * 3);
+}
+.bg-deco .hinomaru {
+  position: absolute; top: -12vmin; right: -10vmin; width: 46vmin; height: 46vmin; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--sun) 9%, transparent) 0 60%, transparent 61%);
+}
+.bg-deco .wave {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 190px; background-image: var(--wave); background-size: 80px 40px;
+  opacity: calc(var(--deco) * 1.4);
+  -webkit-mask-image: linear-gradient(to top, #000, transparent); mask-image: linear-gradient(to top, #000, transparent);
+}
+@media (max-width: 720px) {
+  .bg-deco .g6, .bg-deco .g7, .bg-deco .g8, .bg-deco .phrase { display: none; }
+  .bg-deco .g1 { top: 14%; } .bg-deco .g3 { left: 18%; top: 44%; }
+  .bg-deco .wave { height: 130px; }
+}
+@media print { .bg-deco { display: none; } }
