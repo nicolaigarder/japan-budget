@@ -322,6 +322,7 @@ function render() {
       <header class="top">
         <div class="logo"><span class="sun"></span><div>Japan Budget<small>予算 · ${esc(S.people.nicolai.name)} & ${esc(S.people.alex.name)}</small></div></div>
         <div class="spacer"></div>
+        <button class="add-top" data-act="add">${ICON.plus}Tilføj udgift</button>
         <span id="sync" class="sync ${state.syncState || ''}" title="Synkronisering"></span>
         <button class="icon-btn" data-act="refresh" aria-label="Opdater">${ICON.refresh}</button>
         <button class="icon-btn" data-act="settings" aria-label="Indstillinger">${ICON.gear}</button>
@@ -390,7 +391,7 @@ function dayCard(c, p) {
   if (over) foot = `<b class="neg">${kr(-left)}</b> over ${isToday ? 'dagens ' : ''}budget`;
   else if (isToday) foot = `<b>${kr(left)}</b> tilbage <span class="muted">≈ ${yen(left / rate())}</span>`;
   else foot = `<b class="pos">${kr(left)}</b> under budget`;
-  return `<section class="card daycard" data-swipe="day">
+  return `<section class="card daycard o1" data-swipe="day">
       ${dayNav(D, c.ents)}
       <div class="hero-num">${kr(spent)} <span class="of">/ ${kr(budget)}</span></div>
       <div class="bar ${over ? 'over' : ''}"><span style="width:${pct}%;background:${color}"></span></div>
@@ -410,9 +411,10 @@ function personView(p) {
 
   return `
     ${timelineHtml(c)}
+    <div class="dcol dcol-a">
     ${dayCard(c, p)}
 
-    <section class="card">
+    <section class="card o2">
       <h2>Siden lock-in</h2>
       ${c.started ? `
       <div class="stats">
@@ -426,7 +428,42 @@ function personView(p) {
       </div>`}
     </section>
 
-    <section class="card">
+    <section class="card o8 hist">
+      <h2>Historik</h2>
+      ${historyHtml(c.ents, false)}
+    </section>
+    </div>
+    <div class="dcol dcol-b">
+    <section class="card o4">
+      <h2>Pre vs. post lock-in</h2>
+      <div class="vs">
+        <div class="stat"><div class="k">Pre lock-in</div><div class="v">${kr(c.preAvg)}</div><div class="s">pr. dag · ${c.preDays} dage<br>${kr(c.preTotal)} i alt</div></div>
+        <div class="arrow ${diffPct == null ? '' : diffPct <= 0 ? 'pos' : 'neg'}">${diffPct == null ? '→' : (diffPct <= 0 ? '↓ ' : '↑ ') + Math.abs(Math.round(diffPct)) + '%'}</div>
+        <div class="stat"><div class="k">Post lock-in</div><div class="v">${c.avgPost != null ? kr(c.avgPost) : '–'}</div><div class="s">pr. dag · ${c.completed} hele dage<br>${kr(c.postSpent)} i alt</div></div>
+      </div>
+    </section>
+
+    <section class="card o5 grow">
+      <h2>Forbrug vs. budget <span class="right sub">kumulativt</span></h2>
+      <div class="legend">
+        <span><i style="border-color:${color}"></i>Brugt</span>
+        <span><i class="dash" style="border-color:${color}"></i>Prognose (snit)</span>
+        <span><i class="dash" style="border-color:var(--muted)"></i>Budget</span>
+      </div>
+      <div class="chart" data-chart="cum" data-person="${p}"></div>
+    </section>
+
+    <section class="card o6 grow">
+      <h2>Dag for dag
+        <span class="right seg">${[14, 30].map(n => `<button data-range="${n}" aria-pressed="${state.chartRange === n}">${n} d</button>`).join('')}<button data-range="0" aria-pressed="${state.chartRange === 0}">Alt</button></span>
+      </h2>
+      ${c.started ? `<div class="legend"><span><i class="box" style="background:${color}"></i>Brugt</span><span><i class="dash" style="border-color:var(--muted)"></i>Dagligt budget</span></div>
+      <div class="chart" data-chart="daily" data-person="${p}"></div>` : `<div class="empty">Starter ${fmtDate(c.L)} når lock-in begynder</div>`}
+    </section>
+
+    </div>
+    <div class="dcol dcol-c">
+    <section class="card o3">
       <h2>Hele turen · total</h2>
       <div class="proj">
         <div class="stat"><div class="k">Holder du budgettet</div><div class="v">${kr(c.projBudget)}</div><div class="s">${kr(c.currentBudget)}/dag resten</div></div>
@@ -443,46 +480,17 @@ function personView(p) {
       ${c.fixedUnpaid > 0 ? `<div class="sub" style="margin-top:10px">Faste udgifter der mangler at blive betalt: <b>${kr(c.fixedUnpaid)}</b></div>` : ''}
     </section>
 
-    <section class="card">
-      <h2>Pre vs. post lock-in</h2>
-      <div class="vs">
-        <div class="stat"><div class="k">Pre lock-in</div><div class="v">${kr(c.preAvg)}</div><div class="s">pr. dag · ${c.preDays} dage<br>${kr(c.preTotal)} i alt</div></div>
-        <div class="arrow ${diffPct == null ? '' : diffPct <= 0 ? 'pos' : 'neg'}">${diffPct == null ? '→' : (diffPct <= 0 ? '↓ ' : '↑ ') + Math.abs(Math.round(diffPct)) + '%'}</div>
-        <div class="stat"><div class="k">Post lock-in</div><div class="v">${c.avgPost != null ? kr(c.avgPost) : '–'}</div><div class="s">pr. dag · ${c.completed} hele dage<br>${kr(c.postSpent)} i alt</div></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Forbrug vs. budget <span class="right sub">kumulativt</span></h2>
-      <div class="legend">
-        <span><i style="border-color:${color}"></i>Brugt</span>
-        <span><i class="dash" style="border-color:${color}"></i>Prognose (snit)</span>
-        <span><i class="dash" style="border-color:var(--muted)"></i>Budget</span>
-      </div>
-      <div class="chart" data-chart="cum" data-person="${p}"></div>
-    </section>
-
-    <section class="card">
-      <h2>Dag for dag
-        <span class="right seg">${[14, 30].map(n => `<button data-range="${n}" aria-pressed="${state.chartRange === n}">${n} d</button>`).join('')}<button data-range="0" aria-pressed="${state.chartRange === 0}">Alt</button></span>
-      </h2>
-      ${c.started ? `<div class="legend"><span><i class="box" style="background:${color}"></i>Brugt</span><span><i class="dash" style="border-color:var(--muted)"></i>Dagligt budget</span></div>
-      <div class="chart" data-chart="daily" data-person="${p}"></div>` : `<div class="empty">Starter ${fmtDate(c.L)} når lock-in begynder</div>`}
-    </section>
-
     ${catsHtml(c, color)}
 
-    <section class="card">
-      <h2>Historik</h2>
-      ${historyHtml(c.ents, false)}
-    </section>`;
+
+    </div>`;
 }
 
 function catsHtml(c, color) {
   const rows = Object.entries(c.cats).sort((a, b) => b[1] - a[1]);
   if (!rows.length) return '';
   const max = rows[0][1] || 1;
-  return `<section class="card"><h2>Kategorier <span class="right sub">post lock-in</span></h2><div class="cats">
+  return `<section class="card o7"><h2>Kategorier <span class="right sub">post lock-in</span></h2><div class="cats">
     ${rows.map(([id, v]) => { const ct = catOf(id); return `<div class="cat-row"><span>${ct.icon} ${ct.label}</span><div class="track"><span style="width:${v / max * 100}%;background:${color}"></span></div><span class="amt">${kr(v)}</span></div>`; }).join('')}
   </div></section>`;
 }
@@ -535,14 +543,10 @@ function bothView() {
   const totB = cs.nicolai.projBudget + cs.alex.projBudget, totA = cs.nicolai.projAvg + cs.alex.projAvg;
   return `
     <div class="timeline">${tl.join('')}</div>
-    <section class="card daycard" data-swipe="day">${dayNav(D, state.entries)}<div class="duo">${PEOPLE.map(col).join('')}</div>
+    <div class="dcol dcol-a">
+    <section class="card daycard o1" data-swipe="day">${dayNav(D, state.entries)}<div class="duo">${PEOPLE.map(col).join('')}</div>
       ${D === c0.T ? '' : '<button class="link-btn" data-day="today" style="margin-top:8px">Gå til i dag →</button>'}</section>
-    <section class="card">
-      <h2>Buffer over tid <span class="right sub">+ = under budget</span></h2>
-      ${c0.started ? `<div class="legend">${PEOPLE.map(p => `<span><i style="border-color:var(--${p})"></i>${esc(cs[p].P.name)}</span>`).join('')}</div>
-      <div class="chart" data-chart="buffer"></div>` : `<div class="empty">Starter ${fmtDate(c0.L)} når lock-in begynder</div>`}
-    </section>
-    <section class="card">
+    <section class="card o3">
       <h2>Jer begge · hele turen</h2>
       <div class="proj">
         <div class="stat"><div class="k">Holder I budgettet</div><div class="v">${kr(totB)}</div></div>
@@ -550,7 +554,17 @@ function bothView() {
       </div>
       <div class="sub">Inkl. pre lock-in forbrug og faste udgifter (husleje, fly, forsikring m.m.).</div>
     </section>
-    <section class="card"><h2>Seneste udgifter</h2>${historyHtml(all, true)}</section>`;
+    </div>
+    <div class="dcol dcol-b">
+    <section class="card o2 grow">
+      <h2>Buffer over tid <span class="right sub">+ = under budget</span></h2>
+      ${c0.started ? `<div class="legend">${PEOPLE.map(p => `<span><i style="border-color:var(--${p})"></i>${esc(cs[p].P.name)}</span>`).join('')}</div>
+      <div class="chart" data-chart="buffer"></div>` : `<div class="empty">Starter ${fmtDate(c0.L)} når lock-in begynder</div>`}
+    </section>
+    </div>
+    <div class="dcol dcol-c">
+    <section class="card o4 hist"><h2>Seneste udgifter</h2>${historyHtml(all, true)}</section>
+    </div>`;
 }
 
 /* ---------- Charts ---------- */
@@ -611,6 +625,13 @@ function setupTip(el, svg, W, H, M, n, xs, onIndex) {
   el._hide = hide;
 }
 
+const isDesk = () => window.matchMedia('(min-width: 1100px)').matches;
+function chartH(el, def) {
+  if (!isDesk()) return def;
+  el.innerHTML = '';
+  const h = Math.round(el.clientHeight);
+  return h >= 140 ? h : def;
+}
 function baseSvg(el, H) {
   el.innerHTML = '';
   const W = Math.max(280, Math.round(el.clientWidth || 320));
@@ -634,7 +655,7 @@ function axes(svg, W, H, M, sc, ys, xTicks) {
 const pathOf = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('');
 
 function cumChart(el, c, p) {
-  const H = 230, M = { t: 14, r: 14, b: 26, l: 42 };
+  const H = chartH(el, 230), M = { t: 14, r: 14, b: 26, l: 42 };
   const { svg, W } = baseSvg(el, H);
   const n = c.postDays;
   const projEnd = c.projCum.length ? c.projCum[c.projCum.length - 1][1] : 0;
@@ -673,7 +694,7 @@ function cumChart(el, c, p) {
 }
 
 function dailyChart(el, c, p) {
-  const H = 200, M = { t: 14, r: 10, b: 26, l: 42 };
+  const H = chartH(el, 200), M = { t: 14, r: 10, b: 26, l: 42 };
   const { svg, W } = baseSvg(el, H);
   const endDay = c.ended ? c.last : c.T;
   const total = diffDays(c.L, endDay) + 1;
@@ -719,12 +740,12 @@ function dailyChart(el, c, p) {
     if (!days[i]) return;
     state.selDay = days[i].d === c.T ? null : days[i].d;
     render();
-    const card = $('.daycard'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const card = $('.daycard'); if (card && !isDesk()) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 }
 
 function bufferChart(el) {
-  const H = 210, M = { t: 14, r: 14, b: 26, l: 46 };
+  const H = chartH(el, 210), M = { t: 14, r: 14, b: 26, l: 46 };
   const { svg, W } = baseSvg(el, H);
   const cs = PEOPLE.map(p => ({ p, c: calc(p) }));
   const series = cs.map(({ p, c }) => ({ p, c, vals: c.actualCum.map((v, k) => c.budgetCum[k] - v) }));

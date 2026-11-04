@@ -282,7 +282,7 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 
 /* Toast */
 .toast {
-  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 14px); transform: translate(-50%, -150%);
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 14px); transform: translate(-50%, calc(-100% - 40px));
   background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: 12px; font-weight: 600; font-size: 14px;
   z-index: 50; transition: transform .3s cubic-bezier(.2,.8,.2,1); max-width: calc(100% - 32px);
 }
@@ -292,5 +292,74 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 @media (min-width: 720px) {
   .app { max-width: 640px; }
   .hero-num { font-size: 52px; }
+}
+
+/* Layout: mobil = én kolonne i fast rækkefølge, PC = dashboard der fylder skærmen */
+#view { display: flex; flex-direction: column; }
+.dcol { display: contents; }
+.o1 { order: 1; } .o2 { order: 2; } .o3 { order: 3; } .o4 { order: 4; }
+.o5 { order: 5; } .o6 { order: 6; } .o7 { order: 7; } .o8 { order: 8; }
+.add-top { display: none; }
+
+@media (min-width: 1100px) {
+  html, body { overflow: hidden; }
+  .app {
+    max-width: 1680px; height: 100dvh; display: flex; flex-direction: column;
+    padding: 18px 28px 20px; position: relative;
+  }
+  .top { margin-bottom: 12px; min-height: 40px; }
+  .tabs {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+    width: 400px; margin: 0; z-index: 2;
+  }
+  .add-top {
+    display: inline-flex; align-items: center; gap: 7px; border: 0; height: 40px; padding: 0 16px 0 12px;
+    border-radius: 12px; background: var(--btn); color: var(--btn-text); font-weight: 700; font-size: 14px;
+  }
+  .add-top svg { width: 18px; height: 18px; }
+  .fab { display: none; }
+  .banner, .bank-banner { flex: none; }
+  #view {
+    flex: 1; min-height: 0; display: grid; gap: 14px;
+    grid-template-columns: minmax(330px, 1fr) minmax(420px, 1.45fr) minmax(320px, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #view > .timeline { grid-column: 1 / -1; margin: 0 2px; }
+  .dcol {
+    display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto;
+    scrollbar-width: thin; padding-bottom: 2px;
+  }
+  .dcol .card { margin: 0; flex: none; padding: 15px 17px; }
+  .dcol .card h2 { margin-bottom: 10px; }
+  .dcol .stat { padding: 10px 13px; }
+  .dcol .card.grow { flex: 1 1 0; min-height: 200px; display: flex; flex-direction: column; }
+  .dcol .card.grow .chart { flex: 1; min-height: 0; }
+  .dcol .card.grow .empty { flex: 1; display: grid; place-items: center; }
+  .dcol .card.hist { flex: 1 1 0; min-height: 170px; overflow-y: auto; scrollbar-width: thin; }
+  .day-ents { max-height: 150px; overflow-y: auto; scrollbar-width: thin; }
+  .hero-num { font-size: 46px; }
+  .proj .stat .v { font-size: 21px; }
+  .breakdown td { padding: 6px 0; }
+  .proj { margin-bottom: 10px; }
+  .cats { gap: 8px; }
+  .entry:hover, .more:hover { background: var(--surface-2); border-radius: 10px; }
+  .icon-btn:hover:not(:disabled) { border-color: var(--text-2); }
+
+  /* Dialog i midten i stedet for bundark */
+  .sheet {
+    left: 50%; right: auto; top: 50%; bottom: auto; width: 560px; max-width: calc(100vw - 48px);
+    border-radius: 22px; max-height: 88dvh; padding: 18px 22px 22px;
+    transform: translate(-50%, -46%); opacity: 0; transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s;
+  }
+  .sheet.show { transform: translate(-50%, -50%); opacity: 1; }
+  .sheet .grab { display: none; }
+}
+@media (min-width: 1100px) and (max-height: 620px) {
+  html, body { overflow: auto; }
+  .app { height: auto; }
+  #view { grid-template-rows: auto auto; }
+  .dcol { overflow: visible; }
+  .dcol .card.grow { flex: none; height: 300px; }
+  .dcol .card.hist { flex: none; max-height: 520px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
