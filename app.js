@@ -111,10 +111,21 @@ const state = {
   histLimit: 25,
   chartRange: lsGet('jb_range') || 14,
   lastCur: lsGet('jb_cur') || 'JPY',
+  selDay: null,                       // valgt dag i dagsvisningen (null = i dag)
 };
 const cache = lsGet('jb_cache');
 if (cache && cache.settings) { state.settings = mergeSettings(cache.settings).settings; state.entries = (cache.entries || []).map(norm); }
 applyTheme(lsGet('jb_theme') || 'auto');
+document.head.insertAdjacentHTML('beforeend', `<style>
+  .daynav { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .daynav .icon-btn { width: 38px; height: 38px; flex: none; }
+  .daynav .icon-btn:disabled { opacity: .3; }
+  .daynav-label { flex: 1; text-align: center; line-height: 1.2; }
+  .daynav-label b { display: block; font-size: 15px; }
+  .daynav-label span { font-size: 12px; color: var(--muted); }
+  .day-ents { margin-top: 8px; }
+  .day-ents .entry:first-child { border-top: 1px solid var(--border); }
+</style>`);
 
 function norm(e) {
   return { ...e, amount_dkk: +e.amount_dkk, amount_orig: +e.amount_orig, rate: e.rate == null ? null : +e.rate, day: String(e.day).slice(0, 10) };
@@ -296,6 +307,8 @@ const ICON = {
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
 };
 
@@ -337,25 +350,67 @@ function statusChip(ok, text) {
   return `<span class="chip ${ok == null ? 'neutral' : ok ? 'good' : 'bad'}"><span class="ic">${ok == null ? '–' : ok ? '✓' : '!'}</span>${text}</span>`;
 }
 
+/* ---------- Dagsvisning (bladre mellem dage) ---------- */
+function dayBounds(ents) {
+  const T = today(), L = state.settings.lockin;
+  let min = L;
+  for (const e of ents) if (e.day < min) min = e.day;
+  return { min: min > T ? T : min, max: T };
+}
+function selectedDay(ents) {
+  const { min, max } = dayBounds(ents);
+  const d = state.selDay || max;
+  return d < min ? min : d > max ? max : d;
+}
+function dayTitle(d) {
+  const T = today();
+  if (d === T) return 'I dag';
+  if (d === addDays(T, -1)) return 'I går';
+  if (d === addDays(T, -2)) return 'I forgårs';
+  return ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'][parseD(d).getDay()];
+}
+function dayNav(D, ents) {
+  const { min, max } = dayBounds(ents);
+  const L = state.settings.lockin;
+  return `<div class="daynav">
+    <button class="icon-btn" data-day="-1" ${D <= min ? 'disabled' : ''} aria-label="Forrige dag">${ICON.left}</button>
+    <div class="daynav-label"><b>${dayTitle(D)}</b><span>${WDAYS[parseD(D).getDay()]} ${fmtDate(D)}${D < L ? ' · pre lock-in' : ''}</span></div>
+    <button class="icon-btn" data-day="1" ${D >= max ? 'disabled' : ''} aria-label="Næste dag">${ICON.right}</button>
+  </div>`;
+}
+function dayCard(c, p) {
+  const color = `var(--${p})`;
+  const D = selectedDay(c.ents);
+  const isToday = D === c.T, isPost = D >= c.L;
+  const spent = c.spentOn(D), budget = budgetOn(c.P, isPost ? D : c.L);
+  const left = budget - spent, over = left < 0;
+  const pct = budget ? clamp(spent / budget * 100, 0, 100) : 0;
+  const dayEnts = c.ents.filter(e => e.day === D).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  let foot;
+  if (over) foot = `<b class="neg">${kr(-left)}</b> over ${isToday ? 'dagens ' : ''}budget`;
+  else if (isToday) foot = `<b>${kr(left)}</b> tilbage <span class="muted">≈ ${yen(left / rate())}</span>`;
+  else foot = `<b class="pos">${kr(left)}</b> under budget`;
+  return `<section class="card daycard" data-swipe="day">
+      ${dayNav(D, c.ents)}
+      <div class="hero-num">${kr(spent)} <span class="of">/ ${kr(budget)}</span></div>
+      <div class="bar ${over ? 'over' : ''}"><span style="width:${pct}%;background:${color}"></span></div>
+      <div class="hero-foot">
+        <div class="sub">${foot}</div>
+        ${isPost ? statusChip(!over, over ? 'Over budget' : 'På budget') : statusChip(null, 'Tæller som pre')}
+      </div>
+      <div class="day-ents">${dayEnts.length ? dayEnts.map(e => entryHtml(e, false)).join('') : `<div class="sub muted" style="padding:10px 2px 0">Ingen udgifter ${isToday ? 'endnu i dag' : 'denne dag'}</div>`}</div>
+      ${isToday ? '' : '<button class="link-btn" data-day="today" style="margin-top:6px">Gå til i dag →</button>'}
+    </section>`;
+}
+
 function personView(p) {
   const c = calc(p);
   const color = `var(--${p})`;
-  const left = c.todayBudget - c.todaySpent;
-  const pct = c.todayBudget ? clamp(c.todaySpent / c.todayBudget * 100, 0, 100) : 0;
-  const over = left < 0;
   const diffPct = c.avgPost != null && c.preAvg ? (c.avgPost / c.preAvg - 1) * 100 : null;
 
   return `
     ${timelineHtml(c)}
-    <section class="card">
-      <h2>I dag${c.started ? '' : ' · pre lock-in'} <span class="right sub">${WDAYS[parseD(c.T).getDay()]} ${fmtDate(c.T)}</span></h2>
-      <div class="hero-num">${kr(c.todaySpent)} <span class="of">/ ${kr(c.todayBudget)}</span></div>
-      <div class="bar ${over ? 'over' : ''}"><span style="width:${pct}%;background:${color}"></span></div>
-      <div class="hero-foot">
-        <div class="sub">${over ? `<b class="neg">${kr(-left)}</b> over dagens budget` : `<b>${kr(left)}</b> tilbage <span class="muted">≈ ${yen(left / rate())}</span>`}</div>
-        ${c.started ? statusChip(!over, over ? 'Over budget' : 'På budget') : statusChip(null, 'Tæller som pre')}
-      </div>
-    </section>
+    ${dayCard(c, p)}
 
     <section class="card">
       <h2>Siden lock-in</h2>
@@ -432,6 +487,16 @@ function catsHtml(c, color) {
   </div></section>`;
 }
 
+function entryHtml(e, showPerson) {
+  const ct = catOf(e.category);
+  return `
+        <button class="entry" data-edit="${esc(e.id)}">
+          <span class="em">${ct.icon}</span>
+          <span class="tx"><b>${esc(e.note || ct.label)}</b><span>${showPerson ? `<span class="dot ${e.person}"></span> ${esc(state.settings.people[e.person].name)} · ` : ''}${ct.label}</span></span>
+          <span class="am">${kr(e.amount_dkk)}${e.currency === 'JPY' ? `<small>${yen(e.amount_orig)}</small>` : ''}</span>
+        </button>`;
+}
+
 function historyHtml(ents, showPerson) {
   if (!ents.length) return '<div class="empty">Ingen udgifter endnu – tryk på <b>Tilføj udgift</b></div>';
   const sorted = [...ents].sort((a, b) => (a.day === b.day ? (b.created_at || '').localeCompare(a.created_at || '') : b.day.localeCompare(a.day)));
@@ -441,12 +506,7 @@ function historyHtml(ents, showPerson) {
   const daySum = d => sum(ents.filter(e => e.day === d), e => e.amount_dkk);
   return groups.map(g => `<div class="day-group">
       <div class="day-head"><span>${fmtDay(g.day)}${g.day < state.settings.lockin ? ' · pre' : ''}</span><span>${kr(daySum(g.day))}</span></div>
-      ${g.items.map(e => { const ct = catOf(e.category); return `
-        <button class="entry" data-edit="${esc(e.id)}">
-          <span class="em">${ct.icon}</span>
-          <span class="tx"><b>${esc(e.note || ct.label)}</b><span>${showPerson ? `<span class="dot ${e.person}"></span> ${esc(state.settings.people[e.person].name)} · ` : ''}${ct.label}</span></span>
-          <span class="am">${kr(e.amount_dkk)}${e.currency === 'JPY' ? `<small>${yen(e.amount_orig)}</small>` : ''}</span>
-        </button>`; }).join('')}
+      ${g.items.map(e => entryHtml(e, showPerson)).join('')}
     </div>`).join('') + (sorted.length > shown.length ? `<button class="more" data-act="more">Vis flere (${sorted.length - shown.length})</button>` : '');
 }
 
@@ -458,11 +518,11 @@ function bothView() {
   else tl.push(`<span>Lock-in dag <b>${c0.elapsed}</b></span>`);
   for (const p of PEOPLE) if (!cs[p].ended) tl.push(`<span><span class="dot ${p}"></span> ${esc(cs[p].P.name)} hjem om <b>${cs[p].daysToGo}</b> dage</span>`);
 
-  const col = p => { const c = cs[p]; const left = c.todayBudget - c.todaySpent; return `<div class="col">
+  const D = selectedDay(state.entries);
+  const col = p => { const c = cs[p]; const isPost = D >= c.L; const sp = c.spentOn(D); const left = budgetOn(c.P, isPost ? D : c.L) - sp; return `<div class="col">
     <div class="name"><span class="dot ${p}"></span>${esc(c.P.name)}</div>
-    <div class="k sub">I dag</div>
-    <div class="big">${kr(c.todaySpent)}</div>
-    <div class="sub" style="margin-bottom:8px">${left >= 0 ? `${kr(left)} tilbage` : `<span class="neg">${kr(-left)} over</span>`}</div>
+    <div class="big">${kr(sp)}</div>
+    <div class="sub" style="margin-bottom:8px">${left >= 0 ? `${kr(left)} ${D === c.T ? 'tilbage' : 'under'}` : `<span class="neg">${kr(-left)} over</span>`}</div>
     <div class="row"><span>Buffer</span><span class="${c.buffer >= 0 ? 'pos' : 'neg'}">${c.started ? krSigned(c.buffer) : '–'}</span></div>
     <div class="row"><span>Snit pre</span><span>${kr(c.preAvg)}</span></div>
     <div class="row"><span>Snit post</span><span>${c.avgPost != null ? kr(c.avgPost) : '–'}</span></div>
@@ -475,7 +535,8 @@ function bothView() {
   const totB = cs.nicolai.projBudget + cs.alex.projBudget, totA = cs.nicolai.projAvg + cs.alex.projAvg;
   return `
     <div class="timeline">${tl.join('')}</div>
-    <section class="card"><h2>Status</h2><div class="duo">${PEOPLE.map(col).join('')}</div></section>
+    <section class="card daycard" data-swipe="day">${dayNav(D, state.entries)}<div class="duo">${PEOPLE.map(col).join('')}</div>
+      ${D === c0.T ? '' : '<button class="link-btn" data-day="today" style="margin-top:8px">Gå til i dag →</button>'}</section>
     <section class="card">
       <h2>Buffer over tid <span class="right sub">+ = under budget</span></h2>
       ${c0.started ? `<div class="legend">${PEOPLE.map(p => `<span><i style="border-color:var(--${p})"></i>${esc(cs[p].P.name)}</span>`).join('')}</div>
@@ -632,7 +693,9 @@ function dailyChart(el, c, p) {
   const bw = Math.max(2, Math.min(26, slot - 2));
   const r = Math.min(4, bw / 2);
   let g = '';
+  const sel = selectedDay(c.ents);
   days.forEach((x, i) => {
+    if (x.d === sel) g += `<rect x="${M.l + slot * i + 1}" y="${M.t}" width="${slot - 2}" height="${H - M.t - M.b}" rx="4" fill="var(--text)" opacity=".07"/>`;
     if (x.v <= 0) return;
     const x0 = xs(i) - bw / 2, y0 = ys(x.v), yb = ys(0), h = yb - y0, rr = Math.min(r, h);
     g += `<path d="M${x0},${yb} V${y0 + rr} Q${x0},${y0} ${x0 + rr},${y0} H${x0 + bw - rr} Q${x0 + bw},${y0} ${x0 + bw},${y0 + rr} V${yb} Z" fill="${color}" opacity="${x.d === c.T ? 0.6 : 1}"/>`;
@@ -646,9 +709,17 @@ function dailyChart(el, c, p) {
     const x = days[i]; if (!x) return null;
     const diff = x.b - x.v;
     return {
-      html: `<div><b>${fmtDay(x.d)}</b></div><div class="row">Brugt: <b>${kr(x.v)}</b></div><div class="row">${diff >= 0 ? `${kr(diff)} under budget` : `${kr(-diff)} over budget`}</div>`,
+      html: `<div><b>${fmtDay(x.d)}</b></div><div class="row">Brugt: <b>${kr(x.v)}</b></div><div class="row">${diff >= 0 ? `${kr(diff)} under budget` : `${kr(-diff)} over budget`}</div><div class="row" style="opacity:.7">Tryk for at se dagen</div>`,
       points: [{ y: ys(x.v), color }],
     };
+  });
+  svg.addEventListener('click', ev => {
+    const r = svg.getBoundingClientRect();
+    const i = clamp(Math.floor(((ev.clientX - r.left) * (W / r.width) - M.l) / slot), 0, nDays - 1);
+    if (!days[i]) return;
+    state.selDay = days[i].d === c.T ? null : days[i].d;
+    render();
+    const card = $('.daycard'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 }
 
@@ -740,7 +811,7 @@ function entrySheet(existing) {
     </div></div>
     <div class="row2">
       <div class="field"><label for="f-note">Note</label><input id="f-note" class="input" placeholder="fx Ramen" value="${esc(e.note || '')}" maxlength="80"></div>
-      <div class="field"><label for="f-day">Dato</label><input id="f-day" class="input" type="date" value="${e.day || today()}" min="${minDay}" max="${addDays(today(), 1)}"></div>
+      <div class="field"><label for="f-day">Dato</label><input id="f-day" class="input" type="date" value="${e.day || state.selDay || today()}" min="${minDay}" max="${addDays(today(), 1)}"></div>
     </div>
     <div class="btns">
       <button class="btn" id="f-save">${existing ? 'Gem ændringer' : 'Tilføj'}</button>
@@ -946,6 +1017,7 @@ root.addEventListener('click', ev => {
   if (!b) return;
   if (b.dataset.view) { state.view = b.dataset.view; lsSet('jb_view', state.view); state.histLimit = 25; render(); window.scrollTo({ top: 0 }); }
   if (b.dataset.edit) { const e = state.entries.find(x => String(x.id) === b.dataset.edit); if (e) entrySheet(e); }
+  if (b.dataset.day) { stepDay(b.dataset.day); return; }
   if (b.dataset.range != null) { state.chartRange = +b.dataset.range; lsSet('jb_range', state.chartRange); render(); }
   const act = b.dataset.act;
   if (act === 'add') entrySheet();
@@ -954,6 +1026,20 @@ root.addEventListener('click', ev => {
   if (act === 'more') { state.histLimit += 50; render(); }
 });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSheet(); });
+function stepDay(how) {
+  const ents = state.view === 'both' ? state.entries : state.entries.filter(e => e.person === state.view);
+  const { min, max } = dayBounds(ents);
+  if (how === 'today') state.selDay = null;
+  else { let d = addDays(selectedDay(ents), +how); d = d < min ? min : d > max ? max : d; state.selDay = d === max ? null : d; }
+  render();
+}
+let swipeX = null, swipeY = null;
+root.addEventListener('touchstart', ev => { if (!ev.target.closest('[data-swipe="day"]')) { swipeX = null; return; } swipeX = ev.touches[0].clientX; swipeY = ev.touches[0].clientY; }, { passive: true });
+root.addEventListener('touchend', ev => {
+  if (swipeX == null) return;
+  const dx = ev.changedTouches[0].clientX - swipeX, dy = ev.changedTouches[0].clientY - swipeY; swipeX = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) stepDay(dx > 0 ? '-1' : '1');
+}, { passive: true });
 
 let rT;
 window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(drawCharts, 150); });
