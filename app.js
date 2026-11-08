@@ -12,9 +12,10 @@ const CATS = [
   { id: 'byen', label: 'Byen', icon: '🍻' },
   { id: 'shopping', label: 'Shopping', icon: '🛍️' },
   { id: 'andet', label: 'Andet', icon: '📦' },
+  { id: 'retur', label: 'Betalt tilbage', icon: '💸' },
 ];
 const DAY_CAT = { id: 'dag', label: 'Hele dagen', icon: '📅' };
-const catOf = id => CATS.find(c => c.id === id) || (id === 'dag' ? DAY_CAT : CATS[CATS.length - 1]);
+const catOf = id => CATS.find(c => c.id === id) || (id === 'dag' ? DAY_CAT : CATS.find(c => c.id === 'andet'));
 
 const DEFAULTS = {
   version: 1,
@@ -280,7 +281,11 @@ function calc(p) {
   }
 
   const cats = {};
-  for (const e of postEnts) cats[e.category || 'andet'] = (cats[e.category || 'andet'] || 0) + e.amount_dkk;
+  let refunds = 0;
+  for (const e of postEnts) {
+    if (e.amount_dkk < 0 || e.category === 'retur') { refunds += -e.amount_dkk; continue; }
+    cats[e.category || 'andet'] = (cats[e.category || 'andet'] || 0) + e.amount_dkk;
+  }
 
   // Kumulative serier: position k = slut på dag k (k=0 er start)
   const budgetCum = [0], actualCum = [0];
@@ -296,7 +301,7 @@ function calc(p) {
     P, L, T, last, byDay, spentOn, preDays, preTotal, preAvg, postDays, started, ended, elapsed, completed,
     postSpent, completedSpent, todaySpent, todayBudget, currentBudget, budgetToDate, buffer, planPost,
     fixed, fixedTotal, fixedUnpaid, avgPost, avg, avgBasis, remaining, projBudget, projAvg, allowance,
-    daysUnder, streak, cats, budgetCum, actualCum, projCum, ents,
+    daysUnder, streak, cats, refunds, budgetCum, actualCum, projCum, ents,
     daysToGo: diffDays(T, last),
   };
 }
@@ -488,11 +493,12 @@ function personView(p) {
 
 function catsHtml(c, color) {
   const rows = Object.entries(c.cats).sort((a, b) => b[1] - a[1]);
-  if (!rows.length) return '';
-  const max = rows[0][1] || 1;
+  if (!rows.length && !c.refunds) return '';
+  const max = rows.length ? rows[0][1] || 1 : 1;
   return `<section class="card o7"><h2>Kategorier <span class="right sub">post lock-in</span></h2><div class="cats">
     ${rows.map(([id, v]) => { const ct = catOf(id); return `<div class="cat-row"><span>${ct.icon} ${ct.label}</span><div class="track"><span style="width:${v / max * 100}%;background:${color}"></span></div><span class="amt">${kr(v)}</span></div>`; }).join('')}
-  </div></section>`;
+  </div>
+  ${c.refunds > 0 ? `<div class="refund-row"><span>💸 Betalt tilbage (MobilePay)</span><span class="pos">−${kr(c.refunds).replace('−', '')}</span></div>` : ''}</section>`;
 }
 
 function entryHtml(e, showPerson) {
@@ -501,7 +507,7 @@ function entryHtml(e, showPerson) {
         <button class="entry" data-edit="${esc(e.id)}">
           <span class="em">${ct.icon}</span>
           <span class="tx"><b>${esc(e.note || ct.label)}</b><span>${showPerson ? `<span class="dot ${e.person}"></span> ${esc(state.settings.people[e.person].name)} · ` : ''}${ct.label}</span></span>
-          <span class="am">${kr(e.amount_dkk)}${e.currency === 'JPY' ? `<small>${yen(e.amount_orig)}</small>` : ''}</span>
+          <span class="am${e.amount_dkk < 0 ? ' pos' : ''}">${kr(e.amount_dkk)}${e.currency === 'JPY' ? `<small>${e.amount_orig < 0 ? '−' : ''}${yen(Math.abs(e.amount_orig))}</small>` : ''}</span>
         </button>`;
 }
 
@@ -718,7 +724,7 @@ function dailyChart(el, c, p) {
   days.forEach((x, i) => {
     if (x.d === sel) g += `<rect x="${M.l + slot * i + 1}" y="${M.t}" width="${slot - 2}" height="${H - M.t - M.b}" rx="4" fill="var(--text)" opacity=".07"/>`;
     if (x.v <= 0) return;
-    const x0 = xs(i) - bw / 2, y0 = ys(x.v), yb = ys(0), h = yb - y0, rr = Math.min(r, h);
+    const x0 = xs(i) - bw / 2, y0 = ys(Math.max(0, x.v)), yb = ys(0), h = yb - y0, rr = Math.min(r, h);
     g += `<path d="M${x0},${yb} V${y0 + rr} Q${x0},${y0} ${x0 + rr},${y0} H${x0 + bw - rr} Q${x0 + bw},${y0} ${x0 + bw},${y0 + rr} V${yb} Z" fill="${color}" opacity="${x.d === c.T ? 0.6 : 1}"/>`;
   });
   // budget-trappe
@@ -808,7 +814,7 @@ function entrySheet(existing) {
   let mode = e.category === 'dag' ? 'day' : 'item';
   let cat = e.category && e.category !== 'dag' ? e.category : 'mad';
   let who = person;
-  const amountStr = e.amount_orig != null ? (e.currency === 'JPY' ? String(Math.round(e.amount_orig)) : String(e.amount_orig).replace('.', ',')) : '';
+  const amountStr = e.amount_orig != null ? (e.currency === 'JPY' ? String(Math.round(Math.abs(e.amount_orig))) : String(Math.abs(e.amount_orig)).replace('.', ',')) : '';
   const minDay = S.people.nicolai.arrival < S.people.alex.arrival ? S.people.nicolai.arrival : S.people.alex.arrival;
 
   openSheet(`
@@ -868,14 +874,15 @@ function entrySheet(existing) {
       const v = parseAmount(amt.value, cur);
       if (!(v > 0)) { amt.focus(); hint.textContent = 'Indtast et beløb'; return; }
       const r = +hint.dataset.rate || rate();
+      const sgn = mode !== 'day' && cat === 'retur' ? -1 : 1;
       const rec = {
         ...(existing || {}),
         person: who,
         day: $('#f-day', sh).value || today(),
-        amount_orig: Math.round(v * 100) / 100,
+        amount_orig: sgn * Math.round(v * 100) / 100,
         currency: cur,
         rate: r,
-        amount_dkk: Math.round((cur === 'JPY' ? v * r : v) * 100) / 100,
+        amount_dkk: sgn * Math.round((cur === 'JPY' ? v * r : v) * 100) / 100,
         category: mode === 'day' ? 'dag' : cat,
         note: $('#f-note', sh).value.trim() || null,
       };
@@ -884,7 +891,7 @@ function entrySheet(existing) {
       try {
         if (existing) await db.update(rec); else await db.add(rec);
         closeSheet();
-        toast(existing ? 'Gemt' : `${kr(rec.amount_dkk)} tilføjet til ${S.people[who].name}`);
+        toast(existing ? 'Gemt' : sgn < 0 ? `${kr(-rec.amount_dkk)} retur til ${S.people[who].name}` : `${kr(rec.amount_dkk)} tilføjet til ${S.people[who].name}`);
         await sync(true);
       } catch (err) {
         ev.target.disabled = false;

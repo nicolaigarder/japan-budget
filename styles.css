@@ -409,3 +409,6 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .bg-deco .wave { height: 130px; }
 }
 @media print { .bg-deco { display: none; } }
+
+.refund-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.refund-row span:last-child { font-weight: 600; }
