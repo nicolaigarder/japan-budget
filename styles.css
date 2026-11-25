@@ -338,7 +338,7 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .dcol .card { margin: 0; flex: none; padding: 15px 17px; }
   .dcol .card h2 { margin-bottom: 10px; }
   .dcol .stat { padding: 10px 13px; }
-  .dcol .card.grow { flex: 1 1 0; min-height: 200px; display: flex; flex-direction: column; }
+  .dcol .card.grow { flex: 1 1 0; min-height: 230px; display: flex; flex-direction: column; }
   .dcol .card.grow .chart { flex: 1; min-height: 0; }
   .dcol .card.grow .empty { flex: 1; display: grid; place-items: center; }
   .dcol .card.hist { flex: 1 1 0; min-height: 170px; overflow-y: auto; scrollbar-width: thin; }
@@ -360,7 +360,7 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .sheet.show { transform: translate(-50%, -50%); opacity: 1; }
   .sheet .grab { display: none; }
 }
-@media (min-width: 1100px) and (max-height: 620px) {
+@media (min-width: 1100px) and (max-height: 820px) {
   html, body { overflow: auto; }
   .app { height: auto; }
   #view { grid-template-rows: auto auto; }
